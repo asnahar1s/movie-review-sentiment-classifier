@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SentimentAI — Text Emotion Analyzer</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:ital,wght@0,300;0,400;1,300&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0a0a0f;
+      --surface:   #12121a;
+      --border:    #1e1e2e;
+      --accent-p:  #7fff6e;   /* positive green  */
+      --accent-n:  #ff5f6e;   /* negative red    */
+      --accent-b:  #6eb5ff;   /* blue highlight  */
+      --text:      #e8e8f0;
+      --muted:     #555570;
+      --font-head: 'Syne', sans-serif;
+      --font-mono: 'DM Mono', monospace;
+    }
+
+    html, body {
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-head);
+      overflow-x: hidden;
+    }
+
+    /* ─── Noise overlay ─────────────────────────────────────── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+      opacity: 0.4;
+    }
+
+    /* ─── Ambient glow blobs ────────────────────────────────── */
+    .blob {
+      position: fixed; border-radius: 50%; filter: blur(120px);
+      pointer-events: none; z-index: 0; opacity: 0.12;
+    }
+    .blob-1 { width: 600px; height: 600px; background: var(--accent-p); top: -200px; left: -200px; }
+    .blob-2 { width: 500px; height: 500px; background: var(--accent-n); bottom: -200px; right: -100px; }
+
+    /* ─── Layout ────────────────────────────────────────────── */
+    .wrapper {
+      position: relative; z-index: 1;
+      min-height: 100vh;
+      display: flex; flex-direction: column; align-items: center;
+      padding: 60px 24px 80px;
+    }
+
+    /* ─── Header ────────────────────────────────────────────── */
+    header {
+      text-align: center; margin-bottom: 56px;
+      animation: fadeDown 0.7s ease both;
+    }
+    .logo-tag {
+      display: inline-block;
+      font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.25em;
+      color: var(--accent-b); text-transform: uppercase;
+      border: 1px solid var(--accent-b); border-radius: 4px;
+      padding: 4px 12px; margin-bottom: 20px; opacity: 0.8;
+    }
+    h1 {
+      font-size: clamp(2.8rem, 7vw, 5rem);
+      font-weight: 800; letter-spacing: -0.03em; line-height: 1;
+      background: linear-gradient(135deg, var(--text) 30%, var(--muted));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    h1 span { -webkit-text-fill-color: var(--accent-p); }
+    .subtitle {
+      margin-top: 14px; color: var(--muted);
+      font-family: var(--font-mono); font-size: 0.85rem; letter-spacing: 0.05em;
+    }
+
+    /* ─── Card ──────────────────────────────────────────────── */
+    .card {
+      width: 100%; max-width: 680px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 36px;
+      box-shadow: 0 0 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.03) inset;
+      animation: fadeUp 0.7s 0.15s ease both;
+    }
+
+    .field-label {
+      font-family: var(--font-mono); font-size: 11px;
+      letter-spacing: 0.2em; color: var(--muted); text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+
+    textarea {
+      width: 100%; height: 160px;
+      background: #0d0d15; color: var(--text);
+      border: 1px solid var(--border); border-radius: 12px;
+      padding: 18px 20px;
+      font-family: var(--font-mono); font-size: 0.9rem; line-height: 1.6;
+      resize: vertical; outline: none;
+      transition: border-color 0.2s;
+    }
+    textarea::placeholder { color: var(--muted); }
+    textarea:focus { border-color: var(--accent-b); }
+
+    /* character counter */
+    .meta-row {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-top: 8px; margin-bottom: 24px;
+    }
+    .char-count { font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+
+    /* ─── Button ────────────────────────────────────────────── */
+    .btn {
+      width: 100%; padding: 16px;
+      background: var(--accent-p); color: #0a0a0f;
+      border: none; border-radius: 12px;
+      font-family: var(--font-head); font-size: 1rem; font-weight: 700;
+      letter-spacing: 0.04em; cursor: pointer;
+      transition: transform 0.15s, box-shadow 0.15s, background 0.2s;
+      position: relative; overflow: hidden;
+    }
+    .btn:hover  { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(127,255,110,0.25); }
+    .btn:active { transform: translateY(0); }
+    .btn.loading { background: var(--border); color: var(--muted); cursor: not-allowed; }
+
+    /* spinner inside button */
+    .btn .spinner {
+      display: none; width: 18px; height: 18px;
+      border: 2px solid var(--muted); border-top-color: var(--text);
+      border-radius: 50%; animation: spin 0.7s linear infinite;
+      margin: 0 auto;
+    }
+    .btn.loading .btn-text { display: none; }
+    .btn.loading .spinner  { display: block; }
+
+    /* ─── Result panel ──────────────────────────────────────── */
+    #result {
+      margin-top: 32px;
+      opacity: 0; transform: translateY(12px);
+      transition: opacity 0.4s, transform 0.4s;
+      pointer-events: none;
+    }
+    #result.visible { opacity: 1; transform: translateY(0); pointer-events: auto; }
+
+    .result-header {
+      display: flex; align-items: center; gap: 14px; margin-bottom: 24px;
+    }
+    .emoji { font-size: 2.8rem; line-height: 1; }
+    .sentiment-label {
+      font-size: 2rem; font-weight: 800; letter-spacing: -0.02em;
+    }
+    .sentiment-label.positive { color: var(--accent-p); }
+    .sentiment-label.negative { color: var(--accent-n); }
+    .confidence-tag {
+      font-family: var(--font-mono); font-size: 12px;
+      color: var(--muted); margin-top: 3px;
+    }
+
+    /* progress bars */
+    .bars { display: flex; flex-direction: column; gap: 12px; }
+    .bar-row { display: flex; flex-direction: column; gap: 6px; }
+    .bar-label {
+      display: flex; justify-content: space-between;
+      font-family: var(--font-mono); font-size: 12px; color: var(--muted);
+    }
+    .bar-track {
+      height: 8px; background: var(--border); border-radius: 99px; overflow: hidden;
+    }
+    .bar-fill {
+      height: 100%; border-radius: 99px; width: 0%;
+      transition: width 0.8s cubic-bezier(0.23, 1, 0.32, 1);
+    }
+    .bar-fill.pos { background: var(--accent-p); }
+    .bar-fill.neg { background: var(--accent-n); }
+
+    /* error */
+    .error-msg {
+      font-family: var(--font-mono); font-size: 0.85rem;
+      color: var(--accent-n); padding: 14px 18px;
+      background: rgba(255,95,110,0.08); border: 1px solid rgba(255,95,110,0.25);
+      border-radius: 10px; margin-top: 20px; display: none;
+    }
+    .error-msg.visible { display: block; }
+
+    /* ─── History ───────────────────────────────────────────── */
+    .history-section {
+      width: 100%; max-width: 680px; margin-top: 48px;
+      animation: fadeUp 0.7s 0.3s ease both;
+    }
+    .section-title {
+      font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.2em;
+      color: var(--muted); text-transform: uppercase; margin-bottom: 16px;
+    }
+    #history-list { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+    .hist-item {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 14px 18px;
+      display: flex; align-items: center; gap: 14px;
+      animation: fadeUp 0.3s ease both;
+    }
+    .hist-dot {
+      width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+    }
+    .hist-dot.pos { background: var(--accent-p); }
+    .hist-dot.neg { background: var(--accent-n); }
+    .hist-text {
+      flex: 1; font-family: var(--font-mono); font-size: 0.82rem;
+      color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .hist-badge {
+      font-family: var(--font-mono); font-size: 11px; flex-shrink: 0;
+      padding: 3px 10px; border-radius: 99px;
+    }
+    .hist-badge.pos { color: var(--accent-p); background: rgba(127,255,110,0.1); }
+    .hist-badge.neg { color: var(--accent-n); background: rgba(255,95,110,0.1); }
+
+    /* ─── Footer ────────────────────────────────────────────── */
+    footer {
+      margin-top: 64px; text-align: center;
+      font-family: var(--font-mono); font-size: 11px;
+      color: var(--muted); letter-spacing: 0.08em;
+      animation: fadeUp 0.7s 0.4s ease both;
+    }
+
+    /* ─── Animations ────────────────────────────────────────── */
+    @keyframes fadeDown { from { opacity:0; transform:translateY(-20px); } to { opacity:1; transform:none; } }
+    @keyframes fadeUp   { from { opacity:0; transform:translateY(20px);  } to { opacity:1; transform:none; } }
+    @keyframes spin     { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+  <!-- Ambient blobs -->
+  <div class="blob blob-1"></div>
+  <div class="blob blob-2"></div>
+
+  <div class="wrapper">
+
+    <!-- Header -->
+    <header>
+      <div class="logo-tag">Naive Bayes · TF-IDF · NLTK</div>
+      <h1>Sentiment<span>AI</span></h1>
+      <p class="subtitle">// paste any text → instant emotion analysis</p>
+    </header>
+
+    <!-- Main card -->
+    <div class="card">
+      <div class="field-label">Input Text</div>
+      <textarea id="inputText" placeholder="Type or paste a review, tweet, or any sentence..."></textarea>
+
+      <div class="meta-row">
+        <span class="char-count" id="charCount">0 characters</span>
+      </div>
+
+      <button class="btn" id="analyzeBtn" onclick="analyze()">
+        <span class="btn-text">Analyze Sentiment</span>
+        <div class="spinner"></div>
+      </button>
+
+      <!-- Error -->
+      <div class="error-msg" id="errorMsg"></div>
+
+      <!-- Result -->
+      <div id="result">
+        <div class="result-header">
+          <div class="emoji" id="resEmoji">😐</div>
+          <div>
+            <div class="sentiment-label" id="resLabel">—</div>
+            <div class="confidence-tag" id="resConf">Confidence: —%</div>
+          </div>
+        </div>
+        <div class="bars">
+          <div class="bar-row">
+            <div class="bar-label"><span>Positive</span><span id="posVal">—%</span></div>
+            <div class="bar-track"><div class="bar-fill pos" id="posBar"></div></div>
+          </div>
+          <div class="bar-row">
+            <div class="bar-label"><span>Negative</span><span id="negVal">—%</span></div>
+            <div class="bar-track"><div class="bar-fill neg" id="negBar"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- History -->
+    <div class="history-section" id="historySection" style="display:none">
+      <div class="section-title">Recent Analyses</div>
+      <ul id="history-list"></ul>
+    </div>
+
+    <footer>Built with Flask · scikit-learn · NLTK · Trained on Movie Reviews</footer>
+  </div>
+
+  <script>
+    const textarea    = document.getElementById("inputText");
+    const charCount   = document.getElementById("charCount");
+    const analyzeBtn  = document.getElementById("analyzeBtn");
+    const errorMsg    = document.getElementById("errorMsg");
+    const result      = document.getElementById("result");
+    const histSection = document.getElementById("historySection");
+
+    // ── Character counter ──────────────────────────────────────
+    textarea.addEventListener("input", () => {
+      const n = textarea.value.length;
+      charCount.textContent = `${n} character${n !== 1 ? "s" : ""}`;
+    });
+
+    // ── Enter to submit (Ctrl/Cmd + Enter) ─────────────────────
+    textarea.addEventListener("keydown", e => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") analyze();
+    });
+
+    // ── Analyze ────────────────────────────────────────────────
+    async function analyze() {
+      const text = textarea.value.trim();
+      if (!text) { showError("Please enter some text first."); return; }
+
+      // Loading state
+      analyzeBtn.classList.add("loading");
+      analyzeBtn.disabled = true;
+      hideError();
+      result.classList.remove("visible");
+
+      try {
+        const res  = await fetch("/predict", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text })
+        });
+        const data = await res.json();
+
+        if (!res.ok) { showError(data.error || "Something went wrong."); return; }
+
+        showResult(data, text);
+      } catch (err) {
+        showError("Could not connect to server. Is app.py running?");
+      } finally {
+        analyzeBtn.classList.remove("loading");
+        analyzeBtn.disabled = false;
+      }
+    }
+
+    // ── Show result ────────────────────────────────────────────
+    function showResult(data, inputText) {
+      const isPos = data.sentiment === "Positive";
+
+      document.getElementById("resEmoji").textContent   = isPos ? "😊" : "😞";
+      document.getElementById("resLabel").textContent   = data.sentiment;
+      document.getElementById("resLabel").className     = "sentiment-label " + (isPos ? "positive" : "negative");
+      document.getElementById("resConf").textContent    = `Confidence: ${data.confidence}%`;
+      document.getElementById("posVal").textContent     = `${data.pos_prob}%`;
+      document.getElementById("negVal").textContent     = `${data.neg_prob}%`;
+
+      // Animate bars (small delay to let transition fire)
+      setTimeout(() => {
+        document.getElementById("posBar").style.width = data.pos_prob + "%";
+        document.getElementById("negBar").style.width = data.neg_prob + "%";
+      }, 50);
+
+      result.classList.add("visible");
+      addToHistory(inputText, data);
+    }
+
+    // ── History ────────────────────────────────────────────────
+    const history = [];
+    function addToHistory(text, data) {
+      history.unshift({ text, data });
+      if (history.length > 5) history.pop();
+      renderHistory();
+    }
+
+    function renderHistory() {
+      const list = document.getElementById("history-list");
+      list.innerHTML = "";
+      history.forEach(({ text, data }) => {
+        const isPos = data.sentiment === "Positive";
+        const li = document.createElement("li");
+        li.className = "hist-item";
+        li.innerHTML = `
+          <div class="hist-dot ${isPos ? "pos" : "neg"}"></div>
+          <div class="hist-text">${escHtml(text.substring(0, 80))}${text.length > 80 ? "…" : ""}</div>
+          <div class="hist-badge ${isPos ? "pos" : "neg"}">${data.sentiment} · ${data.confidence}%</div>
+        `;
+        list.appendChild(li);
+      });
+      histSection.style.display = "block";
+    }
+
+    function showError(msg) {
+      errorMsg.textContent = "⚠ " + msg;
+      errorMsg.classList.add("visible");
+    }
+    function hideError() {
+      errorMsg.classList.remove("visible");
+    }
+    function escHtml(str) {
+      return str.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    }
+  </script>
+</body>
+</html>
