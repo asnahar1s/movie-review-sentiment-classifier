@@ -1,4 +1,4 @@
-# Movie-review-sentiment-classifier
+# 🎬Movie-review-sentiment-classifier
 A Python-based sentiment analysis web app that predicts whether a given text is **Positive** or **Negative** using Machine Learning. Built as part of my AI Internship at **SyntecxHub** - Task 3
 
 ---
